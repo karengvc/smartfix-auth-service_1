@@ -1,0 +1,10 @@
+services:
+  smartfix-auth:
+    build: .
+    container_name: smartfix-auth
+    ports:
+      - "8081:8081"
+    environment:
+      DB_URL: jdbc:mysql://host.docker.internal:3306/smartfix_auth
+      DB_USERNAME: root
+      DB_PASSWORD: mysql
