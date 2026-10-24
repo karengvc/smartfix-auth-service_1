@@ -4,10 +4,13 @@ package pe.edu.cibertec.smartfix.auth;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -15,9 +18,16 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService authService;
+    private final String secret;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, @Value("${jwt.secret}") String secret) {
         this.authService = authService;
+        this.secret = secret;
+    }
+
+    private AuthResponse respuesta(Usuario u) {
+        String token = JwtUtil.generar(secret, u.getId(), u.getRol().name(), u.getNombre(), u.getCorreo(), 8);
+        return new AuthResponse(u.getId(), u.getNombre(), u.getCorreo(), u.getRol(), token);
     }
 
     @PostMapping("/register")
@@ -29,14 +39,7 @@ public class AuthController {
 
         try {
             Usuario guardado = authService.registrar(usuario);
-            return ResponseEntity.status(HttpStatus.CREATED).body(
-                    new AuthResponse(
-                            guardado.getId(),
-                            guardado.getNombre(),
-                            guardado.getCorreo(),
-                            guardado.getRol()
-                    )
-            );
+            return ResponseEntity.status(HttpStatus.CREATED).body(respuesta(guardado));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(Map.of("mensaje", e.getMessage()));
@@ -54,17 +57,45 @@ public class AuthController {
                         .body(Map.of("mensaje", "Credenciales incorrectas"));
             }
 
-            return ResponseEntity.ok(new AuthResponse(
-                    usuario.getId(),
-                    usuario.getNombre(),
-                    usuario.getCorreo(),
-                    usuario.getRol()
-            ));
+            return ResponseEntity.ok(respuesta(usuario));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("mensaje", "Credenciales incorrectas"));
         }
     }
+
+    @GetMapping("/tecnicos")
+    public List<UsuarioResumen> tecnicos() {
+        return authService.listarPorRol(Rol.TECNICO).stream().map(this::resumen).toList();
+    }
+
+    @GetMapping("/clientes")
+    public List<UsuarioResumen> clientes() {
+        return authService.listarPorRol(Rol.USUARIO).stream().map(this::resumen).toList();
+    }
+
+    @GetMapping("/usuarios")
+    public List<UsuarioResumen> usuarios() {
+        return authService.listar().stream().map(this::resumen).toList();
+    }
+
+    @PutMapping("/usuarios/{id}/rol")
+    public ResponseEntity<?> cambiarRol(@PathVariable Long id, @Valid @RequestBody CambioRolRequest request) {
+        try {
+            return ResponseEntity.ok(resumen(authService.cambiarRol(id, request.rol())));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("mensaje", e.getMessage()));
+        }
+    }
+
+    private UsuarioResumen resumen(Usuario u) {
+        return new UsuarioResumen(u.getId(), u.getNombre(), u.getCorreo(), u.getRol());
+    }
+
+    public record UsuarioResumen(Long id, String nombre, String correo, Rol rol) {}
+
+    public record CambioRolRequest(@NotNull Rol rol) {}
 
     public record RegistroRequest(
             @NotBlank String nombre,
@@ -81,6 +112,7 @@ public class AuthController {
             Long id,
             String nombre,
             String correo,
-            Rol rol
+            Rol rol,
+            String token
     ) {}
 }
